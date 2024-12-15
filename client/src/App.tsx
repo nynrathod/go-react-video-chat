@@ -26,7 +26,7 @@ const App: React.FC = () => {
 
     return (
         <div className="flex items-center justify-center h-screen bg-gray-100">
-            <div className="w-full p-6 bg-white rounded-lg shadow-lg">
+            <div className={`${!isRoomJoined && 'max-w-lg'} w-full p-6 bg-white rounded-lg shadow-lg`}>
                 {!isRoomJoined && (
                     <h1 className="text-3xl font-semibold text-center mb-8">
                         Real-Time Video Call

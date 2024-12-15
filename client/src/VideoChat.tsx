@@ -1,25 +1,23 @@
 import React, { useEffect, useRef, useState } from "react";
-import { SpeakerWaveIcon,SpeakerXMarkIcon, PhoneIcon, VideoCameraIcon, VideoCameraSlashIcon } from '@heroicons/react/24/outline'
+import { SpeakerWaveIcon, SpeakerXMarkIcon, PhoneIcon, VideoCameraIcon, VideoCameraSlashIcon } from '@heroicons/react/24/outline'
 
 interface VideoChatProps {
     roomID: string;
     onEndCall: () => void;
-
 }
 
-const VideoChat: React.FC<VideoChatProps> = ({ roomID, onEndCall}) => {
+const VideoChat: React.FC<VideoChatProps> = ({ roomID, onEndCall }) => {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-    const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
     const [isAudioEnabled, setIsAudioEnabled] = useState(true);
     const [isVideoEnabled, setIsVideoEnabled] = useState(true);
-    const [isCallStarted, setIsCallStarted] = useState(false);
+
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const peerConnection = useRef<RTCPeerConnection | null>(null);
     const signalingSocket = useRef<WebSocket | null>(null);
 
     useEffect(() => {
-        // Get media stream
         navigator.mediaDevices
             .getUserMedia({ video: true, audio: true })
             .then((stream) => {
@@ -27,7 +25,6 @@ const VideoChat: React.FC<VideoChatProps> = ({ roomID, onEndCall}) => {
                 if (localVideoRef.current) localVideoRef.current.srcObject = stream;
             });
 
-        // Set up WebSocket connection for signaling
         signalingSocket.current = new WebSocket(`ws://localhost:8080/ws/${roomID}`);
 
         signalingSocket.current.onmessage = async (message) => {
@@ -48,23 +45,23 @@ const VideoChat: React.FC<VideoChatProps> = ({ roomID, onEndCall}) => {
                 await peerConnection.current?.addIceCandidate(
                     new RTCIceCandidate(data.candidate)
                 );
+            } else if (data.disconnect) {
+                onEndCall();
             }
         };
 
         return () => signalingSocket.current?.close();
-    }, [roomID]);
+    }, [roomID, onEndCall]);
 
     useEffect(() => {
-        // Set up PeerConnection
         peerConnection.current = new RTCPeerConnection();
+
         localStream?.getTracks().forEach((track) => {
             peerConnection.current?.addTrack(track, localStream);
         });
 
         peerConnection.current.ontrack = (event) => {
-            setRemoteStream(event.streams[0]);
             if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
-            setIsCallStarted(true);
         };
 
         peerConnection.current.onicecandidate = (event) => {
@@ -72,13 +69,22 @@ const VideoChat: React.FC<VideoChatProps> = ({ roomID, onEndCall}) => {
                 signalingSocket.current?.send(JSON.stringify({ candidate: event.candidate }));
             }
         };
-    }, [localStream]);
+
+        peerConnection.current.oniceconnectionstatechange = () => {
+            if (peerConnection.current?.iceConnectionState === 'failed' || peerConnection.current?.iceConnectionState === 'disconnected') {
+                onEndCall();
+            }
+        };
+
+        return () => {
+            peerConnection.current?.close();
+        };
+    }, [localStream, onEndCall]);
 
     const startCall = async () => {
         const offer = await peerConnection.current?.createOffer();
         await peerConnection.current?.setLocalDescription(offer);
         signalingSocket.current?.send(JSON.stringify({ offer }));
-        setIsCallStarted(true);
     };
 
     const toggleAudio = () => {
@@ -93,8 +99,7 @@ const VideoChat: React.FC<VideoChatProps> = ({ roomID, onEndCall}) => {
 
     const endCall = () => {
         peerConnection.current?.close();
-        setRemoteStream(null);
-        setIsCallStarted(false);
+        signalingSocket.current?.send(JSON.stringify({ disconnect: true })); //
         onEndCall();
     };
 
@@ -116,13 +121,12 @@ const VideoChat: React.FC<VideoChatProps> = ({ roomID, onEndCall}) => {
                 />
             </div>
             <div className="flex absolute bottom-20 w-full justify-center gap-4">
-                {!isCallStarted && <button
+                <button
                     className="bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition"
                     onClick={startCall}
                 >
                     Start Call
                 </button>
-                }
                 <button
                     className="bg-yellow-500 text-white py-2 px-4 rounded-lg hover:bg-yellow-600 transition"
                     onClick={toggleAudio}
